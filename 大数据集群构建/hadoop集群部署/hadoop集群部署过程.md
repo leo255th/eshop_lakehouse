@@ -63,32 +63,18 @@ rsync -av /home/leoyi/module/hadoop-3.3.6 leoyi@hadoop103:/home/leoyi/module/
 - `core-site.xml`：
     ```xml
     <configuration>
-        <!-- 【Flink 的重要基石】：指定 HDFS NameNode 的入口地址。
-            以后你在 Flink 代码里配置 Checkpoint 容错路径时，
-            直接写 "hdfs://hadoop101:8020/flink/checkpoints" 就是靠这个配置解析的。-->
         <property>
             <name>fs.defaultFS</name>
             <value>hdfs://hadoop101:8020</value>
         </property>
-
-        <!-- 【避坑必备】：Hadoop 默认把元数据和数据存放在 Linux 的 /tmp 目录下。
-            Ubuntu 系统重启会自动清空 /tmp，如果不改这个，你只要一重启虚拟机，HDFS 数据就全丢了。
-            你把它改到了安装目录下，非常标准。-->
         <property>
             <name>hadoop.tmp.dir</name>
             <value>/home/leoyi/module/hadoop-3.3.6/data</value>
         </property>
-
-        <!-- 【Mac 浏览器访问的福音】：因为你在 Mac 的 Safari 上看 HDFS Web UI，
-            如果要在网页上点按钮删除文件、创建文件夹，Hadoop 默认会把你识别为 "dr.who" 这个无权限的匿名用户。
-            配了这个，Hadoop 就会把你当成超级管理员 "leoyi"，在网页上操作 HDFS 畅通无阻。-->
         <property>
             <name>hadoop.http.staticuser.user</name>
             <value>leoyi</value>
         </property>
-        
-        <!-- 【HDFS 回收站】：删除文件后保留 1440 分钟（24小时）。
-            以后你在调试 Flink 往 HDFS 写数据时，如果误删了，可以用命令找回来。-->
         <property>
             <name>fs.trash.interval</name>
             <value>1440</value>
@@ -102,15 +88,10 @@ rsync -av /home/leoyi/module/hadoop-3.3.6 leoyi@hadoop103:/home/leoyi/module/
 - `hdfs-site.xml`:
     ```xml
     <configuration>
-        <!-- 【副本数】：因为你有 101、102、103 三个 DataNode，设置为 3 是最高可用性。
-            你的 200G 硬盘跑学习场景，存 3 份完全没有存储压力。-->
         <property>
             <name>dfs.replication</name>
             <value>3</value>
         </property>
-
-        <!-- 【SecondaryNameNode】：指定你的 2NN 部署在 103 节点上。
-            它负责帮 NameNode 合并编辑日志，分担压力。-->
         <property>
             <name>dfs.namenode.secondary.http-address</name>
             <value>hadoop103:9868</value>
@@ -120,67 +101,34 @@ rsync -av /home/leoyi/module/hadoop-3.3.6 leoyi@hadoop103:/home/leoyi/module/
 - `yarn-site.xml`:
     ```xml
     <configuration>
-        <!-- 【YARN 的大脑】：指定 ResourceManager 在 hadoop102 上。
-            你的 Flink 提交任务时，会主动找 102 申请资源。-->
         <property>
             <name>yarn.resourcemanager.hostname</name>
             <value>hadoop102</value>
         </property>
-        
-        <!-- 白名单：允许 NodeManager 继承这些环境变量，保障 Flink 在容器中能拿到正确的 Hadoop 路径 -->
         <property>
             <name>yarn.nodemanager.env-whitelist</name>
             <value>JAVA_HOME,HADOOP_COMMON_HOME,HADOOP_HDFS_HOME,HADOOP_CONF_DIR,CLASSPATH_PREPEND_DISTCACHE,HADOOP_YARN_HOME,HADOOP_MAPRED_HOME</value>
         </property>
-        
-        <!-- 【Tailscale 的神级配合】：如果不加 0.0.0.0，YARN 可能只绑定局域网 IP 或者 127.0.0.1。
-            配了 0.0.0.0，你的 Mac 就可以直接通过 Tailscale 隧道，用 http://hadoop102:8088 访问界面了。-->
         <property>
             <name>yarn.resourcemanager.webapp.address</name>
             <value>0.0.0.0:8088</value>
         </property>
-        
-        <!-- 【极其关键：Flink 日志聚合】：Flink 在 YARN 上跑完后，打工人 (TaskManager) 会立刻销毁，本地日志也没了。
-            开启这个，YARN 会在任务结束后，把 Flink 的报错日志打包上传到 HDFS。
-            以后你可以通过 `yarn logs -applicationId xxx` 查错，否则任务挂了你连报错日志都找不到！-->
         <property>
             <name>yarn.log-aggregation-enable</name>
             <value>true</value>
         </property>
         <property>
             <name>yarn.log-aggregation.retain-seconds</name>
-            <value>604800</value> <!-- 保留 7 天，正好对应你的一周学习计划 -->
+            <value>604800</value> 
         </property>
-        <!--
-            19888 端口是 MapReduce 的 HistoryServer 专属的！
-            Flink 跑完后如果要看历史界面，用的是 Flink 自己的 HistoryServer (通常是 8082 端口)。
-            所以这个配置对你没用，不过留着也不影响，只是死代码。-->
-    <!--    <property>-->
-    <!--        <name>yarn.log.server.url</name>-->
-    <!--        <value>http://hadoop102:19888/jobhistory/logs</value>-->
-    <!--    </property>-->
-
-    <!--针对只跑flnk，不跑MR作业的场景，还可以做以下三个优化点-->
-    <!-- 1. 告诉 YARN：这台虚拟机有多少内存可以分配给 Flink 用？
-            如果不配，YARN 默认认为每台机器只有 8G 内存可用。
-            你机器有 24G，我们可以大方一点，给 YARN 分配 16G (16384 MB)，剩下的留给 Ubuntu 系统和 HDFS。-->
         <property>
             <name>yarn.nodemanager.resource.memory-mb</name>
             <value>16384</value>
         </property>
-
-        <!-- 2. 告诉 YARN：这台虚拟机有多少个 CPU 核心可用？
-            默认是 8。但你明确说了你的 VM 是 4 核，如果不改，YARN 会超发导致 CPU 争抢。-->
         <property>
             <name>yarn.nodemanager.resource.cpu-vcores</name>
             <value>4</value>
         </property>
-
-        <!-- 3. 【Flink on YARN 救命神配】：关闭虚拟内存检查。
-            Flink 是个吃内存大户，尤其是在使用 RocksDB 状态后端或者较新的 JDK 时，
-            它占用的虚拟内存（Vmem）往往会超过物理内存的 2.1 倍（YARN 的默认阈值）。
-            如果不关掉这个检查，YARN 只要发现 Flink 虚拟内存超标，就会直接把 Flink 的 TaskManager "咔嚓" 杀掉！
-            报错通常是：Container is running beyond virtual memory limits... -->
         <property>
             <name>yarn.nodemanager.vmem-check-enabled</name>
             <value>false</value>
@@ -189,10 +137,6 @@ rsync -av /home/leoyi/module/hadoop-3.3.6 leoyi@hadoop103:/home/leoyi/module/
     ```
 - `hadoop-env.sh`:
     ```sh
-    # Hadoop 的各个组件（NameNode, NodeManager等）在启动时，
-    # 是通过 SSH 互相登录并拉起后台守护进程的。
-    # 守护进程【无法】读取你在 FinalShell 里手动 source go-hadoop.sh 临时加载的环境变量！
-    # 因此，必须在这里显式“硬编码” JDK 11 的路径，这是你双 JDK 隔离架构成功的基石。
     # 显式指定 JDK 路径
     export JAVA_HOME=/home/leoyi/jdk/jdk-11.0.2
     # 预防 HADOOP 找不到自身安装路径
